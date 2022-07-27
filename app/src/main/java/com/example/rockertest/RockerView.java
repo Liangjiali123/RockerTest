@@ -8,10 +8,14 @@ import android.graphics.Paint;
 import android.graphics.Point;
 import android.graphics.RectF;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 
 import androidx.annotation.Nullable;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class RockerView extends View {
     Paint mAreaPaint;
@@ -20,6 +24,10 @@ public class RockerView extends View {
     Point mCenterPoint;
     Point mMovePoint;
     Point myPoint;
+    private float downX;
+    private float downY;
+    private Object[] s;
+    private float angle1;
 
     public RockerView(Context context) {
         super(context);
@@ -59,41 +67,62 @@ public class RockerView extends View {
     }
 
     //起始角
-    private float startAngle;
-    //绘制角度
-    private float angle;
+     private float startAngle = 0;
+    //终点角度
+     private float angle = 0;
+     //覆盖角度
+     private float sweepAngle = 0;
 
+    ArrayList<Float> angles= new ArrayList<Float>();
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
 
-        int measureWidth = getWidth();
-        int measureHeight = getHeight();
+        int centerWidth = getWidth()/2;
+        int centerHeight = getHeight()/2;
 
-        mCenterPoint.set(measureWidth/2,measureHeight/2);
+        mCenterPoint.set(centerWidth,centerHeight);
 
-        rectRadius = measureWidth/2;
+        rectRadius = centerWidth;
 
         mAreaPaint.setStyle(Paint.Style.STROKE);
-        mAreaPaint.setStrokeWidth(20);
+        mAreaPaint.setStrokeWidth(10);
         mAreaPaint.setColor(Color.RED);
-        RectF rectF = new RectF(0,0,measureWidth,measureHeight);
+        RectF rectF = new RectF(0,0,getWidth(),getHeight());
         canvas.drawRect(rectF,mAreaPaint);
 
         mUserPaint.setStyle(Paint.Style.STROKE);
         mUserPaint.setStrokeWidth(20);
         mUserPaint.setColor(Color.YELLOW);
-        RectF rectF1 = new RectF(measureWidth-drawRadius,
-                measureHeight-drawRadius,
-                measureWidth+drawRadius,
-                measureHeight+drawRadius);
-        //顺时针
-//        if (angle>=360+startAngle){
-//            canvas.drawArc(rectF,0,360,false,mUserPaint);
-//        }else {
-            float sweepAngle = angle - startAngle;
-            canvas.drawArc(rectF1, startAngle, sweepAngle, false, mUserPaint);
-//        }
+        RectF rectF1 = new RectF(centerWidth-drawRadius,
+                centerHeight-drawRadius,
+                centerWidth+drawRadius,
+                centerHeight+drawRadius);
+
+        if (startAngle<angle1){
+            //顺时针
+            if (angle < startAngle) {
+                this.angle = angle + 360;
+            }
+        }else if(startAngle>angle1){
+            //逆时针
+            if (angle>startAngle){
+                this.startAngle = startAngle+360;
+            }
+        }
+        sweepAngle = angle - startAngle;
+
+        canvas.drawArc(rectF1, startAngle, sweepAngle, false, mUserPaint);
+
+        /**
+         * 顺时针判断: angles.get(i)<angles.get(i+1)
+         *        当终点角度angle经过三点钟方向 则 angle+360
+         *        扫描角度 sweepAngle = angle - startAngle;
+         * 逆时针判断: angles.get(i)<angles.get(i+1)
+         *        当终点角度angle经过三点钟方向 则 startAngle+360
+         *        扫描角度 sweepAngle = angle - startAngle;
+         */
+
 
         canvas.save();
 
@@ -102,35 +131,46 @@ public class RockerView extends View {
 
     private float drawRadius;
     private float rectRadius;
+
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         switch (event.getAction()){
             case MotionEvent.ACTION_DOWN:
+                downX = event.getX();
+                downY = event.getY();
+                //半径
+                drawRadius = countRadius(downX, downY);
+                startAngle = getAngle(mCenterPoint,new Point((int) downX,(int) downY));
+                Log.v("RockerView","startAngle = "+startAngle);
+                invalidate();
                 break;
             case MotionEvent.ACTION_MOVE:
                 float moveX =event.getX();
                 float moveY = event.getY();
-                //半径
-                drawRadius = countRadius(event.getX(0),event.getY(0));
 
-                startAngle = getAngle(mCenterPoint,new Point((int) event.getX(0),(int) event.getY(0)));
-                angle = getAngle(mCenterPoint,new Point((int) moveX,(int)moveY));
+                angle = getAngle(mCenterPoint,new Point((int)moveX,(int) moveY));
+                angles.add(angle);
+                s = angles.toArray();
 
-                mMovePoint = getPoint(new Point((int) moveX,(int)moveY));
-                moveTo(mMovePoint.x,mMovePoint.y);
+                Log.v("RockerView","angle = "+angle);
+
+                Log.v("RockerView","sweepAngle = "+ sweepAngle);
+                invalidate();
                 break;
             case MotionEvent.ACTION_UP:
-                break;
-            case MotionEvent.ACTION_CANCEL:
-//                callBackFinish();
                 float upX = event.getX();
                 float upY = event.getY();
-                moveTo(mMovePoint.x,mMovePoint.y);
+
+                angle1 = (float) s[1];
+                Log.v("RockerView","angle1 = "+ angle1);
+                invalidate();
+                break;
+            case MotionEvent.ACTION_CANCEL:
                 break;
             default:
                 break;
         }
-        return super.onTouchEvent(event);
+        return true;
     }
 
     private Point getPoint(Point touchPoint) {
@@ -160,18 +200,17 @@ public class RockerView extends View {
 
     /**
      *获取绘制终点坐标点
-     * @param mCenterPoint 中心点
      * @param touchPoint 触摸点
      * @return 绘制终点
      */
     private float getAngle(Point mCenterPoint,Point touchPoint) {
-        float lenX = (float) (mCenterPoint.x - touchPoint.x );
+        float lenX = (float) (touchPoint.x - mCenterPoint.x );
         // 两点在Y轴距离
-        float lenY = (float) (mCenterPoint.y - touchPoint.y );
+        float lenY = (float) (touchPoint.y - mCenterPoint.y );
         // 两点距离
         float lenXY = (float) Math.sqrt((double) (lenX * lenX + lenY * lenY));
         // 计算弧度
-        double radian = Math.acos(lenX / lenXY) * (touchPoint.y < mCenterPoint.y ? 1 : -1);
+        double radian = Math.acos(lenX / lenXY)* (touchPoint.y < mCenterPoint.y ? -1 : 1);
 
         return  (float) radian2Angle(radian);
     }
